@@ -10,7 +10,22 @@ export async function GET(request: Request) {
   const API_TOKEN = process.env.ECHT_API_TOKEN || process.env.NEXT_PUBLIC_ECHT_API_TOKEN;
   
   // Test results
-  const results = {
+  type RequestResult =
+    | { type: string; status: number; data: any; success: true }
+    | { type: string; error: string; response: any; success: false };
+  const results: {
+    environment: {
+      nodeEnv: string | undefined;
+      hasApiToken: boolean;
+      tokenLength: number;
+    };
+    phoneFormat: {
+      original: string;
+      withPlus: string;
+      validation: string;
+    };
+    requests: RequestResult[];
+  } = {
     environment: {
       nodeEnv: process.env.NODE_ENV,
       hasApiToken: !!API_TOKEN,

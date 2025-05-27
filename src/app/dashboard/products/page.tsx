@@ -1,0 +1,561 @@
+'use client';
+
+import { useState, useEffect, Fragment } from 'react';
+import DashboardLayout from '@/components/DashboardLayout';
+import { supabase } from '@/lib/supabase';
+import toast from 'react-hot-toast';
+import { FiBox, FiPlusCircle, FiEdit, FiTrash2, FiFilter, FiSearch, FiDollarSign, FiArchive, FiImage, FiLink, FiCheckSquare, FiTag, FiTruck, FiMaximize, FiUploadCloud, FiLoader } from 'react-icons/fi';
+import { Dialog, Transition } from '@headlessui/react';
+import ProductsList from '@/components/products/ProductsList';
+
+// Updated Interface for Product
+interface Product {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  description?: string;
+  price: number;
+  image_url?: string; // Primary image
+  image_urls?: string[]; // Additional images
+  category: string;
+  stock: number;
+  tags?: string[];
+  weight?: number;
+  dimensions?: { l?: number; w?: number; h?: number; unit?: string };
+  source_platform?: string;
+  external_ids?: any; // JSONB can be flexible, or define a stricter type
+  is_published_on_whatsapp?: boolean;
+  last_whatsapp_sync_at?: string;
+}
+
+const productSourcePlatforms = ['CRM_Direct', 'Website1', 'Website2', 'Website3', 'Website4', 'WhatsApp_Catalog'];
+const dimensionUnits = ['cm', 'inch', 'mm'];
+const productCategories = ['Wellness', 'Healing', 'Spiritual', 'Books', 'Courses', 'Other']; // Keep for now
+
+const initialProductState: Partial<Product> = {
+  name: '',
+  price: 0,
+  category: productCategories[0],
+  stock: 0,
+  image_urls: [],
+  tags: [],
+  dimensions: { unit: dimensionUnits[0] },
+  source_platform: productSourcePlatforms[0],
+  is_published_on_whatsapp: false,
+};
+
+export default function ProductsPage() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [currentProduct, setCurrentProduct] = useState<Partial<Product> | null>(initialProductState);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filters, setFilters] = useState({ category: '', stock_status: '', source_platform: '' });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [selectedAdditionalFiles, setSelectedAdditionalFiles] = useState<FileList | null>(null);
+  const [uploadingAdditionalImages, setUploadingAdditionalImages] = useState(false);
+
+  // Sample data for testing
+  const sampleProducts = [
+    {
+      id: '1',
+      name: 'Healing Crystal Set',
+      description: 'A complete set of healing crystals for chakra balancing',
+      price: 2500,
+      imageUrl: '/images/products/crystal-set.jpg',
+      category: 'Wellness',
+      stock: 50,
+      source: 'website',
+      onWhatsApp: true
+    },
+    {
+      id: '2',
+      name: 'Meditation Guide Book',
+      description: 'Comprehensive guide for spiritual meditation practices',
+      price: 800,
+      imageUrl: '/images/products/meditation-book.jpg',
+      category: 'Books',
+      stock: 100,
+      source: 'website',
+      onWhatsApp: false
+    },
+    {
+      id: '3',
+      name: 'Wellness Package',
+      description: 'Complete wellness package including consultation and products',
+      price: 5000,
+      imageUrl: '/images/products/wellness-package.jpg',
+      category: 'Wellness',
+      stock: 20,
+      source: 'whatsapp',
+      onWhatsApp: true
+    }
+  ];
+
+  useEffect(() => {
+    // For now, use sample data
+    setProducts(sampleProducts);
+    setLoading(false);
+  }, []);
+
+  const handleOpenModal = (product?: Product) => {
+    setSelectedFile(null); // Reset selected file when opening modal
+    setSelectedAdditionalFiles(null); // Reset selected additional files
+    if (product) {
+      setCurrentProduct({
+        ...product,
+        tags: product.tags || [],
+        image_urls: product.image_urls || [],
+        dimensions: product.dimensions || { unit: dimensionUnits[0] }
+      });
+      setIsEditMode(true);
+    } else {
+      setCurrentProduct(initialProductState);
+      setIsEditMode(false);
+    }
+    setIsProductModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsProductModalOpen(false);
+    setCurrentProduct(null);
+    setSelectedFile(null);
+    setSelectedAdditionalFiles(null);
+    setIsEditMode(false);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    if (!currentProduct) return;
+    const { name, value, type } = e.target;
+    if (name === "image_file_input") { // Handle file input separately
+        const file = (e.target as HTMLInputElement).files?.[0];
+        setSelectedFile(file || null);
+        if (file && currentProduct) {
+             // Optionally, generate a preview URL if needed here
+        }
+        return;
+    }
+    if (name === "additional_image_files_input") {
+        setSelectedAdditionalFiles((e.target as HTMLInputElement).files);
+        return;
+    }
+    if (name.startsWith('dim_')) {
+        const dimKey = name.split('_')[1] as keyof NonNullable<Product['dimensions']>;
+        setCurrentProduct({
+            ...currentProduct,
+            dimensions: {
+                ...currentProduct.dimensions,
+                [dimKey]: type === 'number' ? parseFloat(value) : value,
+            }
+        });
+    } else if (type === 'checkbox') {
+        setCurrentProduct({ ...currentProduct, [name]: (e.target as HTMLInputElement).checked });
+    } else if (name === 'tags' || name === 'image_urls') {
+        setCurrentProduct({ ...currentProduct, [name]: value.split(',').map(s => s.trim()).filter(s => s) });
+    } else {
+        setCurrentProduct({ ...currentProduct, [name]: type === 'number' ? parseFloat(value) : value });
+    }
+  };
+
+  const handlePrimaryImageUpload = async (): Promise<string | undefined> => {
+    if (!selectedFile) return currentProduct?.image_url; // Return existing if no new file
+    if (!currentProduct) return undefined;
+
+    setUploadingImage(true);
+    const toastId = toast.loading('Uploading primary image...');
+    try {
+      const fileName = `${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+      const filePath = `product-images/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('dhruva-holistic-wellness') // Ensure this is your bucket name
+        .upload(filePath, selectedFile);
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('dhruva-holistic-wellness') // Ensure this is your bucket name
+        .getPublicUrl(filePath);
+
+      toast.success('Primary image uploaded!', { id: toastId });
+      setCurrentProduct({ ...currentProduct, image_url: publicUrlData.publicUrl });
+      setSelectedFile(null); // Clear selected file after successful upload
+      return publicUrlData.publicUrl;
+    } catch (error: any) {
+      toast.error(`Upload failed: ${error.message}`, { id: toastId });
+      console.error("Image upload error:", error);
+      return undefined;
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleAdditionalImagesUpload = async (): Promise<string[] | undefined> => {
+    if (!selectedAdditionalFiles || selectedAdditionalFiles.length === 0) {
+      return currentProduct?.image_urls || []; // Return existing if no new files
+    }
+    if (!currentProduct) return undefined;
+
+    setUploadingAdditionalImages(true);
+    const toastId = toast.loading(`Uploading ${selectedAdditionalFiles.length} additional image(s)...`);
+    const uploadedUrls: string[] = currentProduct?.image_urls ? [...currentProduct.image_urls] : [];
+
+    try {
+      for (let i = 0; i < selectedAdditionalFiles.length; i++) {
+        const file = selectedAdditionalFiles[i];
+        const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+        const filePath = `product-images/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('dhruva-holistic-wellness')
+          .upload(filePath, file);
+
+        if (uploadError) {
+          toast.error(`Failed to upload ${file.name}: ${uploadError.message}`, { id: toastId });
+          // Decide if you want to stop all uploads on first error or continue
+          continue; // Continue with next file
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from('dhruva-holistic-wellness')
+          .getPublicUrl(filePath);
+        
+        if (publicUrlData?.publicUrl) {
+            uploadedUrls.push(publicUrlData.publicUrl);
+        }
+      }
+
+      toast.success('Additional images uploaded!', { id: toastId });
+      setCurrentProduct(prev => prev ? { ...prev, image_urls: uploadedUrls } : null);
+      setSelectedAdditionalFiles(null); // Clear selected files
+      return uploadedUrls;
+    } catch (error: any) {
+      toast.error(`Upload failed: ${error.message}`, { id: toastId });
+      console.error("Additional images upload error:", error);
+      return undefined; // Or return partially uploaded URLs if preferred
+    } finally {
+      setUploadingAdditionalImages(false);
+    }
+  };
+
+  const handleSubmitProduct = async () => {
+    if (!currentProduct || !currentProduct.name || currentProduct.price == null || !currentProduct.category || currentProduct.stock == null) {
+      toast.error('Name, Price, Category, and Stock are required.');
+      return;
+    }
+    setIsUpdating(true);
+    const submissionToastId = toast.loading(isEditMode ? 'Updating product...' : 'Adding product...');
+
+    let finalImageUrl = currentProduct.image_url;
+    if (selectedFile) { // If a new file was selected, upload it
+        finalImageUrl = await handlePrimaryImageUpload();
+        if (finalImageUrl === undefined && selectedFile) { // Upload failed but a file was selected
+            toast.error('Primary image upload failed. Please try again or save without a new image.', { id: submissionToastId });
+            setIsUpdating(false);
+            return;
+        }
+    }
+
+    let finalAdditionalImageUrls = currentProduct.image_urls || [];
+    if (selectedAdditionalFiles && selectedAdditionalFiles.length > 0) {
+        const uploadedUrls = await handleAdditionalImagesUpload();
+        if (uploadedUrls === undefined) { // Upload failed
+            toast.error('Additional images upload failed. Please try again or save without new additional images.', { id: submissionToastId });
+            setIsUpdating(false);
+            return;
+        }
+        // Combine with any existing URLs that were not replaced by uploads (if keeping old ones is desired)
+        // For now, let's assume the upload handler updates currentProduct.image_urls correctly.
+        finalAdditionalImageUrls = uploadedUrls;
+    }
+    
+    const productData = {
+        ...currentProduct,
+        image_url: finalImageUrl, // Use the potentially updated image URL
+        price: Number(currentProduct.price) || 0,
+        stock: Number(currentProduct.stock) || 0,
+        weight: Number(currentProduct.weight) || null,
+        dimensions: {
+            l: Number(currentProduct.dimensions?.l) || null,
+            w: Number(currentProduct.dimensions?.w) || null,
+            h: Number(currentProduct.dimensions?.h) || null,
+            unit: currentProduct.dimensions?.unit || dimensionUnits[0],
+        },
+        tags: currentProduct.tags?.filter(t => t) || [],
+        image_urls: finalAdditionalImageUrls.filter(url => url),
+    };
+    if (!isEditMode) delete productData.id;
+
+    try {
+      const { error } = isEditMode && currentProduct.id
+        ? await supabase.from('products').update(productData).eq('id', currentProduct.id)
+        : await supabase.from('products').insert(productData as any);
+
+      if (error) throw error;
+      toast.success(isEditMode ? 'Product updated!' : 'Product added!', { id: submissionToastId });
+      handleCloseModal();
+      fetchProducts();
+    } catch (error: any) {
+      toast.error(`Operation failed: ${error.message}`, { id: submissionToastId });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    if (!window.confirm('Are you sure you want to delete this product?')) return;
+    const toastId = toast.loading('Deleting product...');
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', productId);
+      if (error) throw error;
+      toast.success('Product deleted!', { id: toastId });
+      fetchProducts();
+    } catch (error: any) {
+      toast.error(`Delete failed: ${error.message}`, { id: toastId });
+    } 
+  };
+
+  const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
+    setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const fetchProducts = async () => {
+    setLoading(true);
+    try {
+      let query = supabase.from('products').select('*').order('name', { ascending: true });
+      if (searchTerm) query = query.ilike('name', `%${searchTerm}%`);
+      if (filters.category) query = query.eq('category', filters.category);
+      if (filters.source_platform) query = query.eq('source_platform', filters.source_platform);
+      // TODO: stock_status filter
+      const { data, error } = await query;
+      if (error) throw error;
+      setProducts(data?.map(p => ({...p, tags: p.tags || [], image_urls: p.image_urls || [] })) || []);
+    } catch (error: any) {
+      toast.error(`Failed to fetch products: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <DashboardLayout title="Manage Products">
+      <div className="space-y-6">
+        <div className="flex flex-col items-start justify-between gap-4 rounded-xl bg-white p-6 shadow-lg sm:flex-row sm:items-center">
+          <div>
+            <h2 className="text-2xl font-semibold text-orbitly-charcoal">Product Inventory</h2>
+            <p className="mt-1 text-sm text-orbitly-dark-sage">Add, edit, and manage your product catalog with multi-platform details.</p>
+          </div>
+          <button onClick={() => handleOpenModal()} className="flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors">
+            <FiPlusCircle className="h-4 w-4" /> Add Product
+          </button>
+        </div>
+
+        <div className="rounded-xl bg-white p-6 shadow-lg">
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label htmlFor="searchTerm" className="block text-xs font-medium text-orbitly-dark-sage">Search Product</label>
+              <div className="relative mt-1">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><FiSearch className="h-4 w-4 text-orbitly-soft-gray" /></div>
+                <input type="text" name="searchTerm" id="searchTerm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Product name..." className="block w-full rounded-lg border-orbitly-soft-gray bg-white py-2 pl-10 pr-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"/>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="category" className="block text-xs font-medium text-orbitly-dark-sage">Category</label>
+              <select id="category" name="category" value={filters.category} onChange={handleFilterChange} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray bg-white py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                <option value="">All Categories</option>
+                {productCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="source_platform" className="block text-xs font-medium text-orbitly-dark-sage">Source Platform</label>
+              <select id="source_platform" name="source_platform" value={filters.source_platform} onChange={handleFilterChange} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray bg-white py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                <option value="">All Platforms</option>
+                {productSourcePlatforms.map(src => <option key={src} value={src}>{src}</option>)}
+              </select>
+            </div>
+            {/* TODO: Stock Status Filter Dropdown */}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl bg-white shadow-lg">
+          {loading && products.length === 0 && <div className="p-8 text-center text-orbitly-dark-sage"><FiLoader className="mx-auto h-12 w-12 animate-spin text-primary-500" />Loading products...</div>}
+          {!loading && products.length === 0 && (
+            <div className="p-12 text-center">
+              <FiArchive className="mx-auto h-16 w-16 text-orbitly-soft-gray" />
+              <h3 className="mt-4 text-lg font-medium text-orbitly-charcoal">No Products Found</h3>
+              <p className="mt-1 text-sm text-orbitly-dark-sage">Add your first product or adjust filters.</p>
+            </div>
+          )}
+          {products.length > 0 && (
+            <ProductsList products={products} />
+          )}
+        </div>
+      </div>
+
+      {/* Add/Edit Product Modal */}
+      <Transition appear show={isProductModalOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={handleCloseModal}>
+          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/30" /></Transition.Child>
+          <div className="fixed inset-0 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4 text-center">
+              <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+                <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                  <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-orbitly-charcoal">
+                    {isEditMode ? 'Edit Product' : 'Add New Product'}
+                  </Dialog.Title>
+                  <form onSubmit={(e) => { e.preventDefault(); handleSubmitProduct(); }} className="mt-6 space-y-5">
+                    {/* Basic Info */}
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                        <div>
+                            <label htmlFor="name" className="block text-sm font-medium text-orbitly-dark-sage">Product Name*</label>
+                            <input type="text" name="name" id="name" value={currentProduct?.name || ''} onChange={handleInputChange} required className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                        </div>
+                        <div>
+                            <label htmlFor="category" className="block text-sm font-medium text-orbitly-dark-sage">Category*</label>
+                            <select name="category" id="category" value={currentProduct?.category || ''} onChange={handleInputChange} required className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                                <option value="" disabled>Select category</option>
+                                {productCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label htmlFor="description" className="block text-sm font-medium text-orbitly-dark-sage">Description</label>
+                        <textarea name="description" id="description" value={currentProduct?.description || ''} onChange={handleInputChange} rows={3} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray p-2.5 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"></textarea>
+                    </div>
+                    {/* Pricing & Stock */}
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                        <div>
+                            <label htmlFor="price" className="block text-sm font-medium text-orbitly-dark-sage">Price (₹)*</label>
+                            <input type="number" name="price" id="price" value={currentProduct?.price ?? ''} onChange={handleInputChange} required min="0" step="0.01" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                        </div>
+                        <div>
+                            <label htmlFor="stock" className="block text-sm font-medium text-orbitly-dark-sage">Stock Quantity*</label>
+                            <input type="number" name="stock" id="stock" value={currentProduct?.stock ?? ''} onChange={handleInputChange} required min="0" step="1" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                        </div>
+                    </div>
+                    {/* Images */}
+                    <div>
+                        <label htmlFor="image_url" className="block text-sm font-medium text-orbitly-dark-sage">Primary Image URL</label>
+                        <input 
+                            type="text" 
+                            name="image_url" 
+                            id="image_url" 
+                            value={currentProduct?.image_url || ''} 
+                            onChange={handleInputChange} 
+                            placeholder="https://... or will be auto-filled by upload" 
+                            className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 mb-2"
+                        />
+                        <label htmlFor="image_file_input" className="block text-sm font-medium text-orbitly-dark-sage">Or Upload New Primary Image</label>
+                        <div className="mt-1 flex items-center">
+                            <input 
+                                type="file" 
+                                name="image_file_input" 
+                                id="image_file_input"
+                                onChange={handleInputChange} 
+                                accept="image/png, image/jpeg, image/webp, image/gif"
+                                className="block w-full text-sm text-orbitly-dark-sage file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-600 hover:file:bg-primary-100 disabled:opacity-50"
+                                disabled={uploadingImage || uploadingAdditionalImages}
+                            />
+                        </div>
+                        {selectedFile && <p className="mt-1 text-xs text-orbitly-dark-sage">Selected Primary: {selectedFile.name}</p>}
+                        {currentProduct?.image_url && !selectedFile && (
+                            <div className="mt-2">
+                                <img src={currentProduct.image_url} alt="Current product image" className="h-20 w-20 rounded-md object-cover"/>
+                            </div>
+                        )}
+                    </div>
+                    <div>
+                        <label htmlFor="image_urls" className="block text-sm font-medium text-orbitly-dark-sage">Additional Image URLs (comma-separated)</label>
+                        <textarea name="image_urls" id="image_urls" value={currentProduct?.image_urls?.join(', ') || ''} onChange={handleInputChange} rows={2} placeholder="https://.../img1.jpg, https://.../img2.jpg or will be auto-filled by upload" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray p-2.5 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 mb-2"></textarea>
+                        <label htmlFor="additional_image_files_input" className="block text-sm font-medium text-orbitly-dark-sage">Or Upload New Additional Images</label>
+                        <div className="mt-1 flex items-center">
+                            <input 
+                                type="file" 
+                                name="additional_image_files_input" 
+                                id="additional_image_files_input"
+                                onChange={handleInputChange} 
+                                accept="image/png, image/jpeg, image/webp, image/gif"
+                                multiple // Allow multiple file selection
+                                className="block w-full text-sm text-orbitly-dark-sage file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-600 hover:file:bg-primary-100 disabled:opacity-50"
+                                disabled={uploadingImage || uploadingAdditionalImages}
+                            />
+                        </div>
+                        {selectedAdditionalFiles && selectedAdditionalFiles.length > 0 && (
+                            <p className="mt-1 text-xs text-orbitly-dark-sage">
+                                Selected Additional: {Array.from(selectedAdditionalFiles).map(f => f.name).join(', ')}
+                            </p>
+                        )}
+                        {currentProduct?.image_urls && currentProduct.image_urls.length > 0 && (
+                             <div className="mt-2 flex flex-wrap gap-2">
+                                {currentProduct.image_urls.map((url, index) => (
+                                    <img key={index} src={url} alt={`Additional product image ${index + 1}`} className="h-20 w-20 rounded-md object-cover"/>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    {/* Shipping Details */}
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                        <div>
+                            <label htmlFor="weight" className="block text-sm font-medium text-orbitly-dark-sage">Weight (kg)</label>
+                            <input type="number" name="weight" id="weight" value={currentProduct?.weight ?? ''} onChange={handleInputChange} min="0" step="0.01" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                        </div>
+                        <div className="grid grid-cols-4 gap-x-2 items-end">
+                            <div className="col-span-1"><label htmlFor="dim_l" className="block text-xs font-medium text-orbitly-dark-sage">L</label><input type="number" name="dim_l" id="dim_l" value={currentProduct?.dimensions?.l ?? ''} onChange={handleInputChange} min="0" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" /></div>
+                            <div className="col-span-1"><label htmlFor="dim_w" className="block text-xs font-medium text-orbitly-dark-sage">W</label><input type="number" name="dim_w" id="dim_w" value={currentProduct?.dimensions?.w ?? ''} onChange={handleInputChange} min="0" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" /></div>
+                            <div className="col-span-1"><label htmlFor="dim_h" className="block text-xs font-medium text-orbitly-dark-sage">H</label><input type="number" name="dim_h" id="dim_h" value={currentProduct?.dimensions?.h ?? ''} onChange={handleInputChange} min="0" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" /></div>
+                            <div className="col-span-1"><label htmlFor="dim_unit" className="block text-xs font-medium text-orbitly-dark-sage">Unit</label><select name="dim_unit" id="dim_unit" value={currentProduct?.dimensions?.unit || dimensionUnits[0]} onChange={handleInputChange} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"><option value="cm">cm</option><option value="inch">inch</option><option value="mm">mm</option></select></div>
+                        </div>
+                    </div>
+                    {/* Platform & Syncing */}
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                        <div>
+                            <label htmlFor="source_platform" className="block text-sm font-medium text-orbitly-dark-sage">Source Platform</label>
+                            <select name="source_platform" id="source_platform" value={currentProduct?.source_platform || ''} onChange={handleInputChange} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                                <option value="" disabled>Select source</option>
+                                {productSourcePlatforms.map(src => <option key={src} value={src}>{src}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label htmlFor="tags" className="block text-sm font-medium text-orbitly-dark-sage">Tags (comma-separated)</label>
+                            <input type="text" name="tags" id="tags" value={currentProduct?.tags?.join(', ') || ''} onChange={handleInputChange} placeholder="e.g. bestseller, eco-friendly" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                        </div>
+                    </div>
+                     <div>
+                        <label htmlFor="external_ids" className="block text-sm font-medium text-orbitly-dark-sage">External IDs (JSON format)</label>
+                        <textarea name="external_ids" id="external_ids" value={currentProduct?.external_ids ? JSON.stringify(currentProduct.external_ids, null, 2) : ''} 
+                            onChange={(e) => {
+                                if (!currentProduct) return;
+                                try { setCurrentProduct({ ...currentProduct, external_ids: JSON.parse(e.target.value) }); }
+                                catch (err) { /* Maybe show a small error if JSON is invalid */ }
+                            }}
+                            rows={3} placeholder='{
+  "website1_sku": "SKU123",
+  "echt_catalog_item_id": "wp_prod_abc"
+}' className="mt-1 block w-full rounded-lg border-orbitly-soft-gray p-2.5 text-sm shadow-sm font-mono focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"></textarea>
+                    </div>
+                    <div className="flex items-center">
+                        <input id="is_published_on_whatsapp" name="is_published_on_whatsapp" type="checkbox" checked={currentProduct?.is_published_on_whatsapp || false} onChange={handleInputChange} className="h-4 w-4 text-primary-600 border-orbitly-soft-gray rounded focus:ring-primary-500" />
+                        <label htmlFor="is_published_on_whatsapp" className="ml-2 block text-sm text-orbitly-dark-sage">Publish to WhatsApp Catalog</label>
+                    </div>
+
+                    <div className="mt-8 flex justify-end space-x-3">
+                      <button type="button" onClick={handleCloseModal} disabled={isUpdating || uploadingImage || uploadingAdditionalImages} className="rounded-lg border border-orbitly-soft-gray px-4 py-2 text-sm font-medium text-orbitly-dark-sage hover:bg-orbitly-light-green focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors">Cancel</button>
+                      <button type="submit" disabled={isUpdating || uploadingImage || uploadingAdditionalImages} className="flex items-center justify-center rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors disabled:opacity-70">
+                        {(isUpdating || uploadingImage || uploadingAdditionalImages) && <FiUploadCloud className="animate-spin mr-2" />} 
+                        {isEditMode ? 'Save Changes' : 'Add Product'}
+                      </button>
+                    </div>
+                  </form>
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
+          </div>
+        </Dialog>
+      </Transition>
+    </DashboardLayout>
+  );
+} 

@@ -255,7 +255,7 @@ export default function AppointmentsPage() {
       const appointmentData: Omit<Partial<Appointment>, 'id' | 'created_at' | 'lead_name' | 'lead_phone' | 'service_name' | 'healer_name' | 'scheduled_for'> & { booking_source?: string, scheduled_for: string, duration: number } = {
         lead_id: currentAppointmentForModal.lead_id,
         service_type_id: currentAppointmentForModal.service_type_id,
-        healer_id: currentAppointmentForModal.healer_id || null,
+        healer_id: currentAppointmentForModal.healer_id || undefined,
         date: currentAppointmentForModal.date,
         time: currentAppointmentForModal.time,
         scheduled_for: scheduled_for_timestamp,

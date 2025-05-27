@@ -134,7 +134,7 @@ export default function AppointmentsPage() {
 
   useEffect(() => {
     // For now, use sample data
-    setAppointments(sampleAppointments);
+    // setAppointments(sampleAppointments);
     setLoading(false);
   }, []);
 

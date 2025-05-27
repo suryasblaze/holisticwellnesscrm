@@ -1,6 +1,15 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 
+interface RequestLog {
+  type: string;
+  status?: number;
+  data?: any;
+  error?: string;
+  response?: any;
+  success: boolean;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const phone = searchParams.get('phone') || '918526454931';
@@ -21,7 +30,7 @@ export async function GET(request: Request) {
       withPlus: phone.startsWith('+') ? phone : `+${phone}`,
       validation: /^\+[1-9]\d{6,14}$/.test(phone.startsWith('+') ? phone : `+${phone}`) ? 'valid' : 'invalid'
     },
-    requests: []
+    requests: [] as RequestLog[]
   };
   
   try {

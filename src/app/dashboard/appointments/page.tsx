@@ -30,7 +30,7 @@ interface Appointment {
   payment_status: 'pending' | 'partial' | 'completed';
   amount_paid?: number;
   notes?: string;
-  source?: 'whatsapp' | 'website' | 'crm'; // Added 'crm'
+  source: 'whatsapp' | 'website' | 'crm'; // Made required to match AppointmentsList
 }
 
 const appointmentStatusOptions = [

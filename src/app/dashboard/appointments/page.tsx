@@ -262,8 +262,8 @@ export default function AppointmentsPage() {
         duration: appointmentDuration,
         status: currentAppointmentForModal.status || 'scheduled',
         payment_status: currentAppointmentForModal.payment_status || 'pending',
-        notes: currentAppointmentForModal.notes || null,
-        amount_paid: currentAppointmentForModal.amount_paid || null,
+        notes: currentAppointmentForModal.notes || undefined,
+        amount_paid: currentAppointmentForModal.amount_paid || undefined,
         booking_source: currentAppointmentForModal.source || 'crm', // Ensure booking_source is set
       };
 

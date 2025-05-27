@@ -159,7 +159,7 @@ export default function AppointmentsPage() {
 
       const formattedAppointments = data?.map(app => ({
         ...app,
-        source: app.booking_source, // Map booking_source from DB to source for frontend
+        source: app.booking_source || 'crm', // Map booking_source from DB to source for frontend
         lead_name: app.leads?.[0]?.name,
         lead_phone: app.leads?.[0]?.phone,
         service_name: app.service_types?.[0]?.name,

@@ -202,29 +202,31 @@ export default function AppointmentsPage() {
     setCurrentAppointmentForModal(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleOpenAppointmentModal = (appointmentToEdit?: Appointment) => {
-    if (appointmentToEdit) {
-      setCurrentAppointmentForModal({
-        ...appointmentToEdit,
-        // Ensure date is in 'YYYY-MM-DD' format if it's coming from DB as full timestamp
-        date: appointmentToEdit.date ? new Date(appointmentToEdit.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-      });
-      setIsEditMode(true);
-    } else {
-      setCurrentAppointmentForModal({ // Defaults for new appointment
-        date: new Date().toISOString().split('T')[0],
-        time: '09:00',
-        status: 'scheduled',
-        payment_status: 'pending',
-        source: 'crm',
-        lead_id: '', // Reset other fields for new appointment
-        service_type_id: '',
-        healer_id: '',
-        notes: '',
-        amount_paid: undefined
-      });
-      setIsEditMode(false);
-    }
+  // For editing an appointment
+  const handleOpenAppointmentModal = (appointmentToEdit: Appointment) => {
+    setCurrentAppointmentForModal({
+      ...appointmentToEdit,
+      date: appointmentToEdit.date ? new Date(appointmentToEdit.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+    });
+    setIsEditMode(true);
+    setIsAppointmentModalOpen(true);
+  };
+
+  // For creating a new appointment
+  const handleOpenNewAppointmentModal = () => {
+    setCurrentAppointmentForModal({
+      date: new Date().toISOString().split('T')[0],
+      time: '09:00',
+      status: 'scheduled',
+      payment_status: 'pending',
+      source: 'crm',
+      lead_id: '',
+      service_type_id: '',
+      healer_id: '',
+      notes: '',
+      amount_paid: undefined
+    });
+    setIsEditMode(false);
     setIsAppointmentModalOpen(true);
   };
 
@@ -352,7 +354,7 @@ export default function AppointmentsPage() {
               {showFilters ? 'Hide' : 'Show'} Filters
             </button>
             <button 
-              onClick={() => handleOpenAppointmentModal()}
+              onClick={handleOpenNewAppointmentModal}
               className="flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors"
             >
               <FiPlusCircle className="h-4 w-4" />

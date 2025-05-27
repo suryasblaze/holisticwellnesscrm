@@ -11,8 +11,8 @@ import ProductsList from '@/components/products/ProductsList';
 // Updated Interface for Product
 interface Product {
   id: string;
-  created_at: string;
-  updated_at: string;
+  created_at?: string; // Made optional
+  updated_at?: string; // Made optional
   name: string;
   description?: string;
   price: number;
@@ -23,15 +23,22 @@ interface Product {
   tags?: string[];
   weight?: number;
   dimensions?: { l?: number; w?: number; h?: number; unit?: string };
-  source_platform?: string;
+  source_platform?: 'whatsapp' | 'website' | 'crm' | string; // Raw DB value
   external_ids?: any; // JSONB can be flexible, or define a stricter type
   is_published_on_whatsapp?: boolean;
   last_whatsapp_sync_at?: string;
+  source?: 'whatsapp' | 'website' | 'crm' | string; // Mapped frontend value
 }
 
-const productSourcePlatforms = ['CRM_Direct', 'Website1', 'Website2', 'Website3', 'Website4', 'WhatsApp_Catalog'];
+const productSourcePlatforms = ['crm', 'Website1', 'Website2', 'Website3', 'Website4', 'WhatsApp_Catalog']; // Added 'crm', ensure this is 'crm' for consistency
 const dimensionUnits = ['cm', 'inch', 'mm'];
 const productCategories = ['Wellness', 'Healing', 'Spiritual', 'Books', 'Courses', 'Other']; // Keep for now
+
+const productSourceFilterOptions = [
+    { value: 'crm', label: 'CRM' },
+    { value: 'website', label: 'Website' },
+    { value: 'whatsapp', label: 'WhatsApp' }
+];
 
 const initialProductState: Partial<Product> = {
   name: '',
@@ -41,7 +48,7 @@ const initialProductState: Partial<Product> = {
   image_urls: [],
   tags: [],
   dimensions: { unit: dimensionUnits[0] },
-  source_platform: productSourcePlatforms[0],
+  source: 'crm', // Changed from source_platform to source, and set to 'crm'
   is_published_on_whatsapp: false,
 };
 
@@ -49,94 +56,48 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
-  const [currentProduct, setCurrentProduct] = useState<Partial<Product> | null>(initialProductState);
+  const [currentProductForModal, setCurrentProductForModal] = useState<Partial<Product> | null>(initialProductState);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ category: '', stock_status: '', source_platform: '' });
+  const [filters, setFilters] = useState({ category: '', stock_status: '', source: '' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [selectedAdditionalFiles, setSelectedAdditionalFiles] = useState<FileList | null>(null);
   const [uploadingAdditionalImages, setUploadingAdditionalImages] = useState(false);
 
-  // Sample data for testing
-  const sampleProducts = [
-    {
-      id: '1',
-      name: 'Healing Crystal Set',
-      description: 'A complete set of healing crystals for chakra balancing',
-      price: 2500,
-      imageUrl: '/images/products/crystal-set.jpg',
-      category: 'Wellness',
-      stock: 50,
-      source: 'website',
-      onWhatsApp: true
-    },
-    {
-      id: '2',
-      name: 'Meditation Guide Book',
-      description: 'Comprehensive guide for spiritual meditation practices',
-      price: 800,
-      imageUrl: '/images/products/meditation-book.jpg',
-      category: 'Books',
-      stock: 100,
-      source: 'website',
-      onWhatsApp: false
-    },
-    {
-      id: '3',
-      name: 'Wellness Package',
-      description: 'Complete wellness package including consultation and products',
-      price: 5000,
-      imageUrl: '/images/products/wellness-package.jpg',
-      category: 'Wellness',
-      stock: 20,
-      source: 'whatsapp',
-      onWhatsApp: true
-    }
-  ];
-
   useEffect(() => {
-    // For now, use sample data
-    setProducts(sampleProducts);
-    setLoading(false);
-  }, []);
+    fetchProducts();
+  }, [searchTerm, filters]);
 
-  const handleOpenModal = (product?: Product) => {
-    setSelectedFile(null); // Reset selected file when opening modal
-    setSelectedAdditionalFiles(null); // Reset selected additional files
-    if (product) {
-      setCurrentProduct({
-        ...product,
-        tags: product.tags || [],
-        image_urls: product.image_urls || [],
-        dimensions: product.dimensions || { unit: dimensionUnits[0] }
+  const handleOpenProductModal = (productToEdit?: Product) => {
+    setSelectedFile(null); 
+    setSelectedAdditionalFiles(null);
+    if (productToEdit) {
+      setCurrentProductForModal({
+        ...productToEdit,
+        tags: Array.isArray(productToEdit.tags) ? productToEdit.tags : [],
+        image_urls: Array.isArray(productToEdit.image_urls) ? productToEdit.image_urls : [],
       });
       setIsEditMode(true);
     } else {
-      setCurrentProduct(initialProductState);
+      setCurrentProductForModal(initialProductState);
       setIsEditMode(false);
     }
     setIsProductModalOpen(true);
   };
 
-  const handleCloseModal = () => {
+  const handleCloseProductModal = () => {
     setIsProductModalOpen(false);
-    setCurrentProduct(null);
-    setSelectedFile(null);
-    setSelectedAdditionalFiles(null);
-    setIsEditMode(false);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    if (!currentProduct) return;
+  const handleModalInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    if (!currentProductForModal) return;
     const { name, value, type } = e.target;
-    if (name === "image_file_input") { // Handle file input separately
+
+    if (name === "image_file_input") {
         const file = (e.target as HTMLInputElement).files?.[0];
         setSelectedFile(file || null);
-        if (file && currentProduct) {
-             // Optionally, generate a preview URL if needed here
-        }
         return;
     }
     if (name === "additional_image_files_input") {
@@ -145,25 +106,28 @@ export default function ProductsPage() {
     }
     if (name.startsWith('dim_')) {
         const dimKey = name.split('_')[1] as keyof NonNullable<Product['dimensions']>;
-        setCurrentProduct({
-            ...currentProduct,
+        setCurrentProductForModal({
+            ...currentProductForModal,
             dimensions: {
-                ...currentProduct.dimensions,
+                ...currentProductForModal.dimensions,
                 [dimKey]: type === 'number' ? parseFloat(value) : value,
             }
         });
     } else if (type === 'checkbox') {
-        setCurrentProduct({ ...currentProduct, [name]: (e.target as HTMLInputElement).checked });
-    } else if (name === 'tags' || name === 'image_urls') {
-        setCurrentProduct({ ...currentProduct, [name]: value.split(',').map(s => s.trim()).filter(s => s) });
+      const checked = (e.target as HTMLInputElement).checked;
+      setCurrentProductForModal({ ...currentProductForModal, [name]: checked });
+    } else if (name === 'tags') {
+      setCurrentProductForModal({ ...currentProductForModal, [name]: value.split(',').map(s => s.trim()).filter(s => s) });
+    } else if (name === 'image_urls' && typeof value === 'string') {
+       setCurrentProductForModal({ ...currentProductForModal, [name]: value.split(',').map(s => s.trim()).filter(s => s) });
     } else {
-        setCurrentProduct({ ...currentProduct, [name]: type === 'number' ? parseFloat(value) : value });
+      setCurrentProductForModal({ ...currentProductForModal, [name]: type === 'number' && value !== '' ? parseFloat(value) : value });
     }
   };
 
   const handlePrimaryImageUpload = async (): Promise<string | undefined> => {
-    if (!selectedFile) return currentProduct?.image_url; // Return existing if no new file
-    if (!currentProduct) return undefined;
+    if (!selectedFile) return currentProductForModal?.image_url; // Return existing if no new file
+    if (!currentProductForModal) return undefined;
 
     setUploadingImage(true);
     const toastId = toast.loading('Uploading primary image...');
@@ -182,7 +146,7 @@ export default function ProductsPage() {
         .getPublicUrl(filePath);
 
       toast.success('Primary image uploaded!', { id: toastId });
-      setCurrentProduct({ ...currentProduct, image_url: publicUrlData.publicUrl });
+      setCurrentProductForModal({ ...currentProductForModal, image_url: publicUrlData.publicUrl });
       setSelectedFile(null); // Clear selected file after successful upload
       return publicUrlData.publicUrl;
     } catch (error: any) {
@@ -196,13 +160,13 @@ export default function ProductsPage() {
 
   const handleAdditionalImagesUpload = async (): Promise<string[] | undefined> => {
     if (!selectedAdditionalFiles || selectedAdditionalFiles.length === 0) {
-      return currentProduct?.image_urls || []; // Return existing if no new files
+      return currentProductForModal?.image_urls || []; // Return existing if no new files
     }
-    if (!currentProduct) return undefined;
+    if (!currentProductForModal) return undefined;
 
     setUploadingAdditionalImages(true);
     const toastId = toast.loading(`Uploading ${selectedAdditionalFiles.length} additional image(s)...`);
-    const uploadedUrls: string[] = currentProduct?.image_urls ? [...currentProduct.image_urls] : [];
+    const uploadedUrls: string[] = currentProductForModal?.image_urls ? [...currentProductForModal.image_urls] : [];
 
     try {
       for (let i = 0; i < selectedAdditionalFiles.length; i++) {
@@ -216,7 +180,6 @@ export default function ProductsPage() {
 
         if (uploadError) {
           toast.error(`Failed to upload ${file.name}: ${uploadError.message}`, { id: toastId });
-          // Decide if you want to stop all uploads on first error or continue
           continue; // Continue with next file
         }
 
@@ -230,7 +193,7 @@ export default function ProductsPage() {
       }
 
       toast.success('Additional images uploaded!', { id: toastId });
-      setCurrentProduct(prev => prev ? { ...prev, image_urls: uploadedUrls } : null);
+      setCurrentProductForModal(prev => prev ? { ...prev, image_urls: uploadedUrls } : null);
       setSelectedAdditionalFiles(null); // Clear selected files
       return uploadedUrls;
     } catch (error: any) {
@@ -243,61 +206,72 @@ export default function ProductsPage() {
   };
 
   const handleSubmitProduct = async () => {
-    if (!currentProduct || !currentProduct.name || currentProduct.price == null || !currentProduct.category || currentProduct.stock == null) {
+    if (!currentProductForModal || !currentProductForModal.name || currentProductForModal.price == null || !currentProductForModal.category || currentProductForModal.stock == null) {
       toast.error('Name, Price, Category, and Stock are required.');
       return;
     }
     setIsUpdating(true);
     const submissionToastId = toast.loading(isEditMode ? 'Updating product...' : 'Adding product...');
 
-    let finalImageUrl = currentProduct.image_url;
-    if (selectedFile) { // If a new file was selected, upload it
+    let finalImageUrl = currentProductForModal.image_url;
+    if (selectedFile) {
         finalImageUrl = await handlePrimaryImageUpload();
-        if (finalImageUrl === undefined && selectedFile) { // Upload failed but a file was selected
-            toast.error('Primary image upload failed. Please try again or save without a new image.', { id: submissionToastId });
+        if (finalImageUrl === undefined && selectedFile) {
+            toast.error('Primary image upload failed. Please try again.', { id: submissionToastId });
             setIsUpdating(false);
             return;
         }
     }
 
-    let finalAdditionalImageUrls = currentProduct.image_urls || [];
+    let finalAdditionalImageUrls = currentProductForModal.image_urls || [];
     if (selectedAdditionalFiles && selectedAdditionalFiles.length > 0) {
         const uploadedUrls = await handleAdditionalImagesUpload();
-        if (uploadedUrls === undefined) { // Upload failed
-            toast.error('Additional images upload failed. Please try again or save without new additional images.', { id: submissionToastId });
+        if (uploadedUrls === undefined) { 
+            toast.error('Additional images upload failed. Please try again.', { id: submissionToastId });
             setIsUpdating(false);
             return;
         }
-        // Combine with any existing URLs that were not replaced by uploads (if keeping old ones is desired)
-        // For now, let's assume the upload handler updates currentProduct.image_urls correctly.
         finalAdditionalImageUrls = uploadedUrls;
     }
     
-    const productData = {
-        ...currentProduct,
-        image_url: finalImageUrl, // Use the potentially updated image URL
-        price: Number(currentProduct.price) || 0,
-        stock: Number(currentProduct.stock) || 0,
-        weight: Number(currentProduct.weight) || null,
+    const productDataForDb = {
+        ...currentProductForModal,
+        price: Number(currentProductForModal.price) || 0,
+        stock: Number(currentProductForModal.stock) || 0,
+        weight: Number(currentProductForModal.weight) || null,
         dimensions: {
-            l: Number(currentProduct.dimensions?.l) || null,
-            w: Number(currentProduct.dimensions?.w) || null,
-            h: Number(currentProduct.dimensions?.h) || null,
-            unit: currentProduct.dimensions?.unit || dimensionUnits[0],
+            l: Number(currentProductForModal.dimensions?.l) || null,
+            w: Number(currentProductForModal.dimensions?.w) || null,
+            h: Number(currentProductForModal.dimensions?.h) || null,
+            unit: currentProductForModal.dimensions?.unit || dimensionUnits[0],
         },
-        tags: currentProduct.tags?.filter(t => t) || [],
+        tags: currentProductForModal.tags?.filter(t => t) || [],
+        image_url: finalImageUrl,
         image_urls: finalAdditionalImageUrls.filter(url => url),
+        source_platform: currentProductForModal.source || 'crm',
     };
-    if (!isEditMode) delete productData.id;
+    
+    delete (productDataForDb as Partial<Product>).source;
 
     try {
-      const { error } = isEditMode && currentProduct.id
-        ? await supabase.from('products').update(productData).eq('id', currentProduct.id)
-        : await supabase.from('products').insert(productData as any);
+      let error;
+      if (isEditMode && currentProductForModal.id) {
+        const { error: updateError } = await supabase
+          .from('products')
+          .update(productDataForDb)
+          .eq('id', currentProductForModal.id);
+        error = updateError;
+      } else {
+        const { id, ...insertData } = productDataForDb;
+        const { error: insertError } = await supabase
+          .from('products')
+          .insert(insertData as any);
+        error = insertError;
+      }
 
       if (error) throw error;
       toast.success(isEditMode ? 'Product updated!' : 'Product added!', { id: submissionToastId });
-      handleCloseModal();
+      handleCloseProductModal();
       fetchProducts();
     } catch (error: any) {
       toast.error(`Operation failed: ${error.message}`, { id: submissionToastId });
@@ -329,11 +303,30 @@ export default function ProductsPage() {
       let query = supabase.from('products').select('*').order('name', { ascending: true });
       if (searchTerm) query = query.ilike('name', `%${searchTerm}%`);
       if (filters.category) query = query.eq('category', filters.category);
-      if (filters.source_platform) query = query.eq('source_platform', filters.source_platform);
-      // TODO: stock_status filter
+      if (filters.source) query = query.eq('source_platform', filters.source);
       const { data, error } = await query;
       if (error) throw error;
-      setProducts(data?.map(p => ({...p, tags: p.tags || [], image_urls: p.image_urls || [] })) || []);
+
+      const formattedProducts = data?.map(p => {
+        let mappedSource: string | undefined = undefined;
+        if (p.source_platform === 'CRM_source') {
+          mappedSource = 'crm';
+        } else if (p.source_platform === 'Your_Website_Source_Value_In_DB') { // <-- TODO: Replace with actual DB value for website products
+          mappedSource = 'website';
+        } else if (p.source_platform === 'Your_WhatsApp_Source_Value_In_DB') { // <-- TODO: Replace with actual DB value for WhatsApp products
+          mappedSource = 'whatsapp';
+        } else {
+          mappedSource = p.source_platform; // Keep original if no specific match
+        }
+        return {
+          ...p,
+          source: mappedSource,
+          tags: Array.isArray(p.tags) ? p.tags : [],
+          image_urls: Array.isArray(p.image_urls) ? p.image_urls : [],
+        };
+      }) || [];
+      
+      setProducts(formattedProducts as Product[]);
     } catch (error: any) {
       toast.error(`Failed to fetch products: ${error.message}`);
     } finally {
@@ -349,7 +342,7 @@ export default function ProductsPage() {
             <h2 className="text-2xl font-semibold text-orbitly-charcoal">Product Inventory</h2>
             <p className="mt-1 text-sm text-orbitly-dark-sage">Add, edit, and manage your product catalog with multi-platform details.</p>
           </div>
-          <button onClick={() => handleOpenModal()} className="flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors">
+          <button onClick={() => handleOpenProductModal()} className="flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors">
             <FiPlusCircle className="h-4 w-4" /> Add Product
           </button>
         </div>
@@ -371,13 +364,18 @@ export default function ProductsPage() {
               </select>
             </div>
             <div>
-              <label htmlFor="source_platform" className="block text-xs font-medium text-orbitly-dark-sage">Source Platform</label>
-              <select id="source_platform" name="source_platform" value={filters.source_platform} onChange={handleFilterChange} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray bg-white py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+              <label htmlFor="source" className="block text-xs font-medium text-orbitly-dark-sage">Source Platform</label>
+              <select 
+                id="source" 
+                name="source" 
+                value={filters.source} 
+                onChange={(e) => setFilters(prev => ({ ...prev, source: e.target.value }))} 
+                className="mt-1 block w-full rounded-lg border-orbitly-soft-gray bg-white py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              >
                 <option value="">All Platforms</option>
-                {productSourcePlatforms.map(src => <option key={src} value={src}>{src}</option>)}
+                {productSourceFilterOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
             </div>
-            {/* TODO: Stock Status Filter Dropdown */}
           </div>
         </div>
 
@@ -391,14 +389,17 @@ export default function ProductsPage() {
             </div>
           )}
           {products.length > 0 && (
-            <ProductsList products={products} />
+            <ProductsList 
+              products={products} 
+              onEditProduct={handleOpenProductModal}
+            />
           )}
         </div>
       </div>
 
       {/* Add/Edit Product Modal */}
       <Transition appear show={isProductModalOpen} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={handleCloseModal}>
+        <Dialog as="div" className="relative z-50" onClose={handleCloseProductModal}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0"><div className="fixed inset-0 bg-black/30" /></Transition.Child>
           <div className="fixed inset-0 overflow-y-auto">
             <div className="flex min-h-full items-center justify-center p-4 text-center">
@@ -408,15 +409,14 @@ export default function ProductsPage() {
                     {isEditMode ? 'Edit Product' : 'Add New Product'}
                   </Dialog.Title>
                   <form onSubmit={(e) => { e.preventDefault(); handleSubmitProduct(); }} className="mt-6 space-y-5">
-                    {/* Basic Info */}
                     <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                         <div>
                             <label htmlFor="name" className="block text-sm font-medium text-orbitly-dark-sage">Product Name*</label>
-                            <input type="text" name="name" id="name" value={currentProduct?.name || ''} onChange={handleInputChange} required className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                            <input type="text" name="name" id="name" value={currentProductForModal?.name || ''} onChange={handleModalInputChange} required className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                         </div>
                         <div>
                             <label htmlFor="category" className="block text-sm font-medium text-orbitly-dark-sage">Category*</label>
-                            <select name="category" id="category" value={currentProduct?.category || ''} onChange={handleInputChange} required className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                            <select name="category" id="category" value={currentProductForModal?.category || ''} onChange={handleModalInputChange} required className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
                                 <option value="" disabled>Select category</option>
                                 {productCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                             </select>
@@ -424,28 +424,26 @@ export default function ProductsPage() {
                     </div>
                     <div>
                         <label htmlFor="description" className="block text-sm font-medium text-orbitly-dark-sage">Description</label>
-                        <textarea name="description" id="description" value={currentProduct?.description || ''} onChange={handleInputChange} rows={3} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray p-2.5 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"></textarea>
+                        <textarea name="description" id="description" value={currentProductForModal?.description || ''} onChange={handleModalInputChange} rows={3} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray p-2.5 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"></textarea>
                     </div>
-                    {/* Pricing & Stock */}
                     <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                         <div>
                             <label htmlFor="price" className="block text-sm font-medium text-orbitly-dark-sage">Price (₹)*</label>
-                            <input type="number" name="price" id="price" value={currentProduct?.price ?? ''} onChange={handleInputChange} required min="0" step="0.01" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                            <input type="number" name="price" id="price" value={currentProductForModal?.price ?? ''} onChange={handleModalInputChange} required min="0" step="0.01" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                         </div>
                         <div>
                             <label htmlFor="stock" className="block text-sm font-medium text-orbitly-dark-sage">Stock Quantity*</label>
-                            <input type="number" name="stock" id="stock" value={currentProduct?.stock ?? ''} onChange={handleInputChange} required min="0" step="1" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                            <input type="number" name="stock" id="stock" value={currentProductForModal?.stock ?? ''} onChange={handleModalInputChange} required min="0" step="1" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                         </div>
                     </div>
-                    {/* Images */}
                     <div>
                         <label htmlFor="image_url" className="block text-sm font-medium text-orbitly-dark-sage">Primary Image URL</label>
                         <input 
                             type="text" 
                             name="image_url" 
                             id="image_url" 
-                            value={currentProduct?.image_url || ''} 
-                            onChange={handleInputChange} 
+                            value={currentProductForModal?.image_url || ''} 
+                            onChange={handleModalInputChange} 
                             placeholder="https://... or will be auto-filled by upload" 
                             className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 mb-2"
                         />
@@ -455,31 +453,31 @@ export default function ProductsPage() {
                                 type="file" 
                                 name="image_file_input" 
                                 id="image_file_input"
-                                onChange={handleInputChange} 
+                                onChange={handleModalInputChange} 
                                 accept="image/png, image/jpeg, image/webp, image/gif"
                                 className="block w-full text-sm text-orbitly-dark-sage file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-600 hover:file:bg-primary-100 disabled:opacity-50"
                                 disabled={uploadingImage || uploadingAdditionalImages}
                             />
                         </div>
                         {selectedFile && <p className="mt-1 text-xs text-orbitly-dark-sage">Selected Primary: {selectedFile.name}</p>}
-                        {currentProduct?.image_url && !selectedFile && (
+                        {currentProductForModal?.image_url && !selectedFile && (
                             <div className="mt-2">
-                                <img src={currentProduct.image_url} alt="Current product image" className="h-20 w-20 rounded-md object-cover"/>
+                                <img src={currentProductForModal.image_url} alt="Current product image" className="h-20 w-20 rounded-md object-cover"/>
                             </div>
                         )}
                     </div>
                     <div>
                         <label htmlFor="image_urls" className="block text-sm font-medium text-orbitly-dark-sage">Additional Image URLs (comma-separated)</label>
-                        <textarea name="image_urls" id="image_urls" value={currentProduct?.image_urls?.join(', ') || ''} onChange={handleInputChange} rows={2} placeholder="https://.../img1.jpg, https://.../img2.jpg or will be auto-filled by upload" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray p-2.5 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 mb-2"></textarea>
+                        <textarea name="image_urls" id="image_urls" value={currentProductForModal?.image_urls?.join(', ') || ''} onChange={handleModalInputChange} rows={2} placeholder="https://.../img1.jpg, https://.../img2.jpg or will be auto-filled by upload" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray p-2.5 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 mb-2"></textarea>
                         <label htmlFor="additional_image_files_input" className="block text-sm font-medium text-orbitly-dark-sage">Or Upload New Additional Images</label>
                         <div className="mt-1 flex items-center">
                             <input 
                                 type="file" 
                                 name="additional_image_files_input" 
                                 id="additional_image_files_input"
-                                onChange={handleInputChange} 
+                                onChange={handleModalInputChange} 
                                 accept="image/png, image/jpeg, image/webp, image/gif"
-                                multiple // Allow multiple file selection
+                                multiple
                                 className="block w-full text-sm text-orbitly-dark-sage file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-600 hover:file:bg-primary-100 disabled:opacity-50"
                                 disabled={uploadingImage || uploadingAdditionalImages}
                             />
@@ -489,47 +487,44 @@ export default function ProductsPage() {
                                 Selected Additional: {Array.from(selectedAdditionalFiles).map(f => f.name).join(', ')}
                             </p>
                         )}
-                        {currentProduct?.image_urls && currentProduct.image_urls.length > 0 && (
+                        {currentProductForModal?.image_urls && currentProductForModal.image_urls.length > 0 && (
                              <div className="mt-2 flex flex-wrap gap-2">
-                                {currentProduct.image_urls.map((url, index) => (
+                                {currentProductForModal.image_urls.map((url, index) => (
                                     <img key={index} src={url} alt={`Additional product image ${index + 1}`} className="h-20 w-20 rounded-md object-cover"/>
                                 ))}
                             </div>
                         )}
                     </div>
-                    {/* Shipping Details */}
                     <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                         <div>
                             <label htmlFor="weight" className="block text-sm font-medium text-orbitly-dark-sage">Weight (kg)</label>
-                            <input type="number" name="weight" id="weight" value={currentProduct?.weight ?? ''} onChange={handleInputChange} min="0" step="0.01" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                            <input type="number" name="weight" id="weight" value={currentProductForModal?.weight ?? ''} onChange={handleModalInputChange} min="0" step="0.01" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                         </div>
                         <div className="grid grid-cols-4 gap-x-2 items-end">
-                            <div className="col-span-1"><label htmlFor="dim_l" className="block text-xs font-medium text-orbitly-dark-sage">L</label><input type="number" name="dim_l" id="dim_l" value={currentProduct?.dimensions?.l ?? ''} onChange={handleInputChange} min="0" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" /></div>
-                            <div className="col-span-1"><label htmlFor="dim_w" className="block text-xs font-medium text-orbitly-dark-sage">W</label><input type="number" name="dim_w" id="dim_w" value={currentProduct?.dimensions?.w ?? ''} onChange={handleInputChange} min="0" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" /></div>
-                            <div className="col-span-1"><label htmlFor="dim_h" className="block text-xs font-medium text-orbitly-dark-sage">H</label><input type="number" name="dim_h" id="dim_h" value={currentProduct?.dimensions?.h ?? ''} onChange={handleInputChange} min="0" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" /></div>
-                            <div className="col-span-1"><label htmlFor="dim_unit" className="block text-xs font-medium text-orbitly-dark-sage">Unit</label><select name="dim_unit" id="dim_unit" value={currentProduct?.dimensions?.unit || dimensionUnits[0]} onChange={handleInputChange} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"><option value="cm">cm</option><option value="inch">inch</option><option value="mm">mm</option></select></div>
+                            <div className="col-span-1"><label htmlFor="dim_l" className="block text-xs font-medium text-orbitly-dark-sage">L</label><input type="number" name="dim_l" id="dim_l" value={currentProductForModal?.dimensions?.l ?? ''} onChange={handleModalInputChange} min="0" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" /></div>
+                            <div className="col-span-1"><label htmlFor="dim_w" className="block text-xs font-medium text-orbitly-dark-sage">W</label><input type="number" name="dim_w" id="dim_w" value={currentProductForModal?.dimensions?.w ?? ''} onChange={handleModalInputChange} min="0" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" /></div>
+                            <div className="col-span-1"><label htmlFor="dim_h" className="block text-xs font-medium text-orbitly-dark-sage">H</label><input type="number" name="dim_h" id="dim_h" value={currentProductForModal?.dimensions?.h ?? ''} onChange={handleModalInputChange} min="0" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" /></div>
+                            <div className="col-span-1"><label htmlFor="dim_unit" className="block text-xs font-medium text-orbitly-dark-sage">Unit</label><select name="dim_unit" id="dim_unit" value={currentProductForModal?.dimensions?.unit || dimensionUnits[0]} onChange={handleModalInputChange} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"><option value="cm">cm</option><option value="inch">inch</option><option value="mm">mm</option></select></div>
                         </div>
                     </div>
-                    {/* Platform & Syncing */}
                     <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                         <div>
-                            <label htmlFor="source_platform" className="block text-sm font-medium text-orbitly-dark-sage">Source Platform</label>
-                            <select name="source_platform" id="source_platform" value={currentProduct?.source_platform || ''} onChange={handleInputChange} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
-                                <option value="" disabled>Select source</option>
-                                {productSourcePlatforms.map(src => <option key={src} value={src}>{src}</option>)}
+                            <label htmlFor="source" className="block text-sm font-medium text-orbitly-dark-sage">Source</label>
+                            <select name="source" id="source" value={currentProductForModal?.source || 'crm'} onChange={handleModalInputChange} className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                                {productSourceFilterOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                             </select>
                         </div>
                         <div>
                             <label htmlFor="tags" className="block text-sm font-medium text-orbitly-dark-sage">Tags (comma-separated)</label>
-                            <input type="text" name="tags" id="tags" value={currentProduct?.tags?.join(', ') || ''} onChange={handleInputChange} placeholder="e.g. bestseller, eco-friendly" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                            <input type="text" name="tags" id="tags" value={currentProductForModal?.tags?.join(', ') || ''} onChange={handleModalInputChange} placeholder="e.g. bestseller, eco-friendly" className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                         </div>
                     </div>
                      <div>
                         <label htmlFor="external_ids" className="block text-sm font-medium text-orbitly-dark-sage">External IDs (JSON format)</label>
-                        <textarea name="external_ids" id="external_ids" value={currentProduct?.external_ids ? JSON.stringify(currentProduct.external_ids, null, 2) : ''} 
+                        <textarea name="external_ids" id="external_ids" value={currentProductForModal?.external_ids ? JSON.stringify(currentProductForModal.external_ids, null, 2) : ''} 
                             onChange={(e) => {
-                                if (!currentProduct) return;
-                                try { setCurrentProduct({ ...currentProduct, external_ids: JSON.parse(e.target.value) }); }
+                                if (!currentProductForModal) return;
+                                try { setCurrentProductForModal({ ...currentProductForModal, external_ids: JSON.parse(e.target.value) }); }
                                 catch (err) { /* Maybe show a small error if JSON is invalid */ }
                             }}
                             rows={3} placeholder='{
@@ -538,12 +533,12 @@ export default function ProductsPage() {
 }' className="mt-1 block w-full rounded-lg border-orbitly-soft-gray p-2.5 text-sm shadow-sm font-mono focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"></textarea>
                     </div>
                     <div className="flex items-center">
-                        <input id="is_published_on_whatsapp" name="is_published_on_whatsapp" type="checkbox" checked={currentProduct?.is_published_on_whatsapp || false} onChange={handleInputChange} className="h-4 w-4 text-primary-600 border-orbitly-soft-gray rounded focus:ring-primary-500" />
+                        <input id="is_published_on_whatsapp" name="is_published_on_whatsapp" type="checkbox" checked={currentProductForModal?.is_published_on_whatsapp || false} onChange={handleModalInputChange} className="h-4 w-4 text-primary-600 border-orbitly-soft-gray rounded focus:ring-primary-500" />
                         <label htmlFor="is_published_on_whatsapp" className="ml-2 block text-sm text-orbitly-dark-sage">Publish to WhatsApp Catalog</label>
                     </div>
 
                     <div className="mt-8 flex justify-end space-x-3">
-                      <button type="button" onClick={handleCloseModal} disabled={isUpdating || uploadingImage || uploadingAdditionalImages} className="rounded-lg border border-orbitly-soft-gray px-4 py-2 text-sm font-medium text-orbitly-dark-sage hover:bg-orbitly-light-green focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors">Cancel</button>
+                      <button type="button" onClick={handleCloseProductModal} disabled={isUpdating || uploadingImage || uploadingAdditionalImages} className="rounded-lg border border-orbitly-soft-gray px-4 py-2 text-sm font-medium text-orbitly-dark-sage hover:bg-orbitly-light-green focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors">Cancel</button>
                       <button type="submit" disabled={isUpdating || uploadingImage || uploadingAdditionalImages} className="flex items-center justify-center rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors disabled:opacity-70">
                         {(isUpdating || uploadingImage || uploadingAdditionalImages) && <FiUploadCloud className="animate-spin mr-2" />} 
                         {isEditMode ? 'Save Changes' : 'Add Product'}

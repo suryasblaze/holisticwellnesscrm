@@ -12,6 +12,7 @@ import {
 } from 'react-icons/fi';
 import { Dialog, Transition } from '@headlessui/react';
 import AddLeadModal from '@/components/AddLeadModal';
+import WhatsAppMessagePreview from '@/components/WhatsAppMessagePreview';
 
 interface Lead {
   id: string;
@@ -57,6 +58,7 @@ export default function LeadsPage() {
   const [leadToUpdateNotes, setLeadToUpdateNotes] = useState<Lead | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
 
   useEffect(() => {
@@ -126,19 +128,15 @@ export default function LeadsPage() {
     const toastId = toast.loading('Sending WhatsApp message...');
     try {
       const messaging = MessagingService.getInstance();
-      // This is a placeholder, actual welcome message and PDF sending logic might be different
       await messaging.sendFollowUpReminder(lead.phone, lead.name, formatDateTime(new Date()), lead.service_type );
       // await messaging.sendWelcomePDF(lead.phone); // Assuming this is part of the flow
-
-      const { error } = await supabase
+      await supabase
         .from('leads')
         .update({ last_contact: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', lead.id);
-
-      if (error) throw error;
-
       toast.success('WhatsApp message sent!', { id: toastId });
-      fetchLeads(); // Refresh leads to show updated last_contact
+      setShowPreview(true);
+      fetchLeads();
     } catch (error: any) {
       console.error('Error sending WhatsApp message:', error);
       toast.error(`Failed to send message: ${error.message || 'Unknown error'}`, { id: toastId });
@@ -216,6 +214,44 @@ export default function LeadsPage() {
   return (
     <DashboardLayout title="Manage Leads">
       <div className="space-y-6">
+        <Transition appear show={showPreview} as={Fragment}>
+          <Dialog as="div" className="relative z-50" onClose={() => setShowPreview(false)}>
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0"
+              enterTo="opacity-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100"
+              leaveTo="opacity-0"
+            >
+              <div className="fixed inset-0 bg-black/30" />
+            </Transition.Child>
+            <div className="fixed inset-0 overflow-y-auto">
+              <div className="flex min-h-full items-center justify-center p-4 text-center">
+                <Transition.Child
+                  as={Fragment}
+                  enter="ease-out duration-300"
+                  enterFrom="opacity-0 scale-95"
+                  enterTo="opacity-100 scale-100"
+                  leave="ease-in duration-200"
+                  leaveFrom="opacity-100 scale-100"
+                  leaveTo="opacity-0 scale-95"
+                >
+                  <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all relative">
+                    <button
+                      onClick={() => setShowPreview(false)}
+                      className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 text-xl font-bold focus:outline-none"
+                    >
+                      ×
+                    </button>
+                    <WhatsAppMessagePreview />
+                  </Dialog.Panel>
+                </Transition.Child>
+              </div>
+            </div>
+          </Dialog>
+        </Transition>
         {/* Header and Actions */}
         <div className="flex flex-col items-start justify-between gap-4 rounded-xl bg-white p-6 shadow-lg sm:flex-row sm:items-center">
           <div>

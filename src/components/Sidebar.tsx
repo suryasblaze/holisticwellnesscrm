@@ -30,12 +30,12 @@ const navigationItems = [
   { name: 'Dashboard', href: '/dashboard', icon: FiGrid },
   { name: 'Leads', href: '/dashboard/leads', icon: FiUsers },
   { name: 'Appointments', href: '/dashboard/appointments', icon: FiCalendar },
-  { name: 'Tasks', href: '/dashboard/tasks', icon: FiClipboard },
   { name: 'Products', href: '/dashboard/products', icon: FiShoppingCart }, 
   { name: 'Orders', href: '/dashboard/orders', icon: FiShoppingCart },
   { name: 'Medical Records', href: '/dashboard/medical-records', icon: FiFileText },
   { name: 'Feedback', href: '/dashboard/feedback', icon: FiMessageSquare },
   { name: 'Health Monitoring', href: '/dashboard/health-monitoring', icon: FiActivity },
+  { name: 'Tasks', href: '/dashboard/tasks', icon: FiClipboard },
   // Add more items for other modules here later
 ];
 

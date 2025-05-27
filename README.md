@@ -82,7 +82,7 @@ A comprehensive wellness platform built with Next.js, Supabase, and WhatsApp int
      ```
      NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
      NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-     WHATSAPP_API_URL=https://graph.facebook.com/v17.0
+     WHATSAPP_API_URL=your_whatsapp_API_url
      WHATSAPP_ACCESS_TOKEN=your_whatsapp_access_token
      WHATSAPP_PHONE_NUMBER_ID=your_whatsapp_phone_number_id
      NEXT_PUBLIC_ADMIN_WHATSAPP_NUMBER=your_admin_whatsapp_number

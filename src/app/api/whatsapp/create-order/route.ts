@@ -189,6 +189,7 @@ export async function POST(request: Request) {
       // Consider how to handle this partial failure. Maybe delete the order or flag for review.
       // For now, we'll report the main order success but log this item error.
       // throw new Error(`Error creating order items: ${orderItemsError.message}`);
+       toast.error('Order created, but issue saving items. Please check manually.'); // This toast won't work server-side
     }
     
     // 5. Optionally, update product stock if you manage stock

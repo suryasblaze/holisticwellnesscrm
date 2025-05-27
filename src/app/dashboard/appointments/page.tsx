@@ -30,6 +30,7 @@ interface Appointment {
   payment_status: 'pending' | 'partial' | 'completed';
   amount_paid?: number;
   notes?: string;
+  source?: 'whatsapp' | 'website' | 'crm'; // Added 'crm'
 }
 
 const appointmentStatusOptions = [
@@ -84,61 +85,20 @@ export default function AppointmentsPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
-  const [newAppointment, setNewAppointment] = useState<Partial<Appointment>>({
+  const [currentAppointmentForModal, setCurrentAppointmentForModal] = useState<Partial<Appointment>>({
     date: new Date().toISOString().split('T')[0], // Default to today
     time: '09:00', // Default time
     status: 'scheduled',
-    payment_status: 'pending'
+    payment_status: 'pending',
+    source: 'crm' // Default source for new appointments
   });
+  const [isEditMode, setIsEditMode] = useState(false); // Add state for edit mode
   const [availableLeads, setAvailableLeads] = useState<LeadForSelect[]>([]);
   const [availableServices, setAvailableServices] = useState<ServiceTypeForSelect[]>([]);
   const [availableHealers, setAvailableHealers] = useState<HealerForSelect[]>([]);
 
-  // Sample data for testing
-  const sampleAppointments = [
-    {
-      id: '1',
-      clientName: 'John Doe',
-      date: new Date(),
-      time: '10:00 AM',
-      service: 'Chakra Healing Session',
-      status: 'confirmed' as const,
-      source: 'whatsapp' as const,
-      healer: 'Dr. Sarah',
-      paymentStatus: 'pending' as const,
-      notes: 'First time client'
-    },
-    {
-      id: '2',
-      clientName: 'Jane Smith',
-      date: new Date(),
-      time: '2:30 PM',
-      service: 'Meditation Class',
-      status: 'pending' as const,
-      source: 'website' as const,
-      healer: 'Dr. James',
-      paymentStatus: 'paid' as const
-    },
-    {
-      id: '3',
-      clientName: 'Mike Johnson',
-      date: new Date(),
-      time: '4:00 PM',
-      service: 'Wellness Consultation',
-      status: 'confirmed' as const,
-      source: 'whatsapp' as const,
-      healer: 'Dr. James',
-      paymentStatus: 'pending' as const
-    }
-  ];
-
   useEffect(() => {
-    // For now, use sample data
-    // setAppointments(sampleAppointments);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
+    fetchAppointments(); // Call fetchAppointments on initial mount
     fetchDropdownData(); // Fetch data for form dropdowns on component mount
   }, []); // Empty dependency array ensures this runs once on mount
 
@@ -167,17 +127,15 @@ export default function AppointmentsPage() {
   const fetchAppointments = async () => {
     setLoading(true);
     try {
-      // TODO: Adjust query to fetch appointments, potentially joining with leads, services, healers
-      // For now, a simple fetch from the 'appointments' table
       let query = supabase
         .from('appointments') 
         .select(`
-          id, created_at, lead_id, service_type_id, healer_id, date, time, status, payment_status, notes, amount_paid,
+          id, created_at, lead_id, service_type_id, healer_id, date, time, status, payment_status, notes, amount_paid, booking_source,
           leads ( name, phone ),
           service_types ( name ),
           users ( full_name ) 
         `)
-        .order('date', { ascending: true }) // Order by appointment date
+        .order('date', { ascending: true }) 
         .order('time', { ascending: true });
 
       if (filters.status) query = query.eq('status', filters.status);
@@ -201,10 +159,11 @@ export default function AppointmentsPage() {
 
       const formattedAppointments = data?.map(app => ({
         ...app,
+        source: app.booking_source, // Map booking_source from DB to source for frontend
         lead_name: app.leads?.name,
         lead_phone: app.leads?.phone,
         service_name: app.service_types?.name,
-        healer_name: app.users?.full_name, // Ensure your 'users' table has 'full_name' and refers to healers
+        healer_name: app.users?.full_name, 
         scheduled_for: `${app.date}T${app.time}`
       })) || [];
       
@@ -239,62 +198,99 @@ export default function AppointmentsPage() {
     </div>
   );
   
-  const handleNewAppointmentChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setNewAppointment(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  const handleModalInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    setCurrentAppointmentForModal(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleOpenAppointmentModal = (appointmentToEdit?: Appointment) => {
+    if (appointmentToEdit) {
+      setCurrentAppointmentForModal({
+        ...appointmentToEdit,
+        // Ensure date is in 'YYYY-MM-DD' format if it's coming from DB as full timestamp
+        date: appointmentToEdit.date ? new Date(appointmentToEdit.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      });
+      setIsEditMode(true);
+    } else {
+      setCurrentAppointmentForModal({ // Defaults for new appointment
+        date: new Date().toISOString().split('T')[0],
+        time: '09:00',
+        status: 'scheduled',
+        payment_status: 'pending',
+        source: 'crm',
+        lead_id: '', // Reset other fields for new appointment
+        service_type_id: '',
+        healer_id: '',
+        notes: '',
+        amount_paid: undefined
+      });
+      setIsEditMode(false);
+    }
+    setIsAppointmentModalOpen(true);
+  };
+
+  const handleCloseAppointmentModal = () => {
+    setIsAppointmentModalOpen(false);
+    // Optionally reset currentAppointmentForModal and isEditMode here if desired
+    // For now, it will retain the last state until next open
   };
 
   const handleSaveAppointment = async () => {
+    if (!currentAppointmentForModal.lead_id || !currentAppointmentForModal.service_type_id || !currentAppointmentForModal.date || !currentAppointmentForModal.time) {
+      toast.error('Client, Service, Date, and Time are required.');
+      return;
+    }
+    
     setIsUpdating(true);
-    const toastId = toast.loading('Scheduling appointment...');
+    const toastId = toast.loading(isEditMode ? 'Updating appointment...' : 'Scheduling appointment...');
+    
     try {
-      // Validation (basic example)
-      if (!newAppointment.lead_id || !newAppointment.service_type_id || !newAppointment.date || !newAppointment.time) {
-        throw new Error('Client, Service, Date, and Time are required.');
-      }
-
-      // Construct scheduled_for from date and time
-      const scheduled_for_timestamp = `${newAppointment.date}T${newAppointment.time}:00`;
-
-      // Get duration from the selected service
-      const selectedService = availableServices.find(service => service.id === newAppointment.service_type_id);
-      const appointmentDuration = selectedService?.duration; // This could be undefined if service not found or duration not set
+      const scheduled_for_timestamp = `${currentAppointmentForModal.date}T${currentAppointmentForModal.time}:00`;
+      const selectedService = availableServices.find(service => service.id === currentAppointmentForModal.service_type_id);
+      const appointmentDuration = selectedService?.duration;
 
       if (appointmentDuration === undefined || appointmentDuration === null) {
-        // It's possible service_types.duration is nullable, but appointments.duration is not.
-        // Or the selected service wasn't found (less likely if dropdown is populated correctly).
-        // For now, let's throw an error if we can't determine a duration, assuming it's required.
-        // Alternatively, provide a default or make appointments.duration nullable if appropriate.
         throw new Error('Could not determine appointment duration from selected service.');
       }
 
-      const { data, error } = await supabase
-        .from('appointments')
-        .insert([
-          {
-            lead_id: newAppointment.lead_id,
-            service_type_id: newAppointment.service_type_id,
-            healer_id: newAppointment.healer_id || null,
-            date: newAppointment.date,
-            time: newAppointment.time,
-            scheduled_for: scheduled_for_timestamp,
-            duration: appointmentDuration,
-            status: newAppointment.status || 'scheduled',
-            payment_status: newAppointment.payment_status || 'pending',
-            notes: newAppointment.notes || null,
-            amount_paid: newAppointment.amount_paid || null,
-          },
-        ])
-        .select(); // Important to get the inserted row back for UI update
+      const appointmentData: Omit<Partial<Appointment>, 'id' | 'created_at' | 'lead_name' | 'lead_phone' | 'service_name' | 'healer_name' | 'scheduled_for'> & { booking_source?: string, scheduled_for: string, duration: number } = {
+        lead_id: currentAppointmentForModal.lead_id,
+        service_type_id: currentAppointmentForModal.service_type_id,
+        healer_id: currentAppointmentForModal.healer_id || null,
+        date: currentAppointmentForModal.date,
+        time: currentAppointmentForModal.time,
+        scheduled_for: scheduled_for_timestamp,
+        duration: appointmentDuration,
+        status: currentAppointmentForModal.status || 'scheduled',
+        payment_status: currentAppointmentForModal.payment_status || 'pending',
+        notes: currentAppointmentForModal.notes || null,
+        amount_paid: currentAppointmentForModal.amount_paid || null,
+        booking_source: currentAppointmentForModal.source || 'crm', // Ensure booking_source is set
+      };
+
+      let error;
+      if (isEditMode && currentAppointmentForModal.id) {
+        // Update logic
+        const { error: updateError } = await supabase
+          .from('appointments')
+          .update(appointmentData)
+          .eq('id', currentAppointmentForModal.id);
+        error = updateError;
+      } else {
+        // Insert logic
+        const { error: insertError } = await supabase
+          .from('appointments')
+          .insert([appointmentData]); // Supabase expects an array for insert
+        error = insertError;
+      }
 
       if (error) throw error;
       
-      toast.success('Appointment scheduled successfully!', { id: toastId });
-      setIsAppointmentModalOpen(false);
-      setNewAppointment({ date: new Date().toISOString().split('T')[0], time: '09:00', status: 'scheduled', payment_status: 'pending' }); // Reset form
-      fetchAppointments(); // Refresh the list
+      toast.success(isEditMode ? 'Appointment updated successfully!' : 'Appointment scheduled successfully!', { id: toastId });
+      handleCloseAppointmentModal();
+      fetchAppointments(); 
     } catch (error: any) {
-      console.error('Error scheduling appointment:', error);
-      toast.error(`Failed to schedule: ${error.message}`, { id: toastId });
+      console.error('Error saving appointment:', error);
+      toast.error(`Failed to save: ${error.message}`, { id: toastId });
     } finally {
       setIsUpdating(false);
     }
@@ -356,7 +352,7 @@ export default function AppointmentsPage() {
               {showFilters ? 'Hide' : 'Show'} Filters
             </button>
             <button 
-              onClick={() => setIsAppointmentModalOpen(true)} 
+              onClick={() => handleOpenAppointmentModal()}
               className="flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors"
             >
               <FiPlusCircle className="h-4 w-4" />
@@ -404,14 +400,17 @@ export default function AppointmentsPage() {
             </div>
           )}
           {appointments.length > 0 && (
-            <AppointmentsList appointments={appointments} />
+            <AppointmentsList 
+              appointments={appointments} 
+              onEditAppointment={handleOpenAppointmentModal}
+            />
           )}
         </div>
       </div>
 
       {/* New/Edit Appointment Modal */}
       <Transition appear show={isAppointmentModalOpen} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={() => setIsAppointmentModalOpen(false)}>
+        <Dialog as="div" className="relative z-50" onClose={handleCloseAppointmentModal}>
           <Transition.Child
             as={Fragment}
             enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100"
@@ -429,8 +428,8 @@ export default function AppointmentsPage() {
               >
                 <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-xl bg-white p-6 text-left align-middle shadow-xl transition-all">
                   <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-orbitly-charcoal flex justify-between items-center">
-                    Schedule New Appointment
-                    <button onClick={() => setIsAppointmentModalOpen(false)} className="text-orbitly-soft-gray hover:text-orbitly-charcoal">
+                    {isEditMode ? 'Edit Appointment' : 'Schedule New Appointment'}
+                    <button onClick={handleCloseAppointmentModal} className="text-orbitly-soft-gray hover:text-orbitly-charcoal">
                        <FiX size={20}/>
                     </button>
                   </Dialog.Title>
@@ -438,7 +437,7 @@ export default function AppointmentsPage() {
                     {/* Lead Selector */}
                     <div>
                       <label htmlFor="lead_id" className="block text-sm font-medium text-orbitly-dark-sage">Client/Lead</label>
-                      <select id="lead_id" name="lead_id" value={newAppointment.lead_id || ''} onChange={handleNewAppointmentChange} required
+                      <select id="lead_id" name="lead_id" value={currentAppointmentForModal.lead_id || ''} onChange={handleModalInputChange} required
                         className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
                         <option value="" disabled>Select a client</option>
                         {availableLeads.map(lead => <option key={lead.id} value={lead.id}>{lead.name} ({lead.phone})</option>)}
@@ -447,7 +446,7 @@ export default function AppointmentsPage() {
                     {/* Service Selector */}
                     <div>
                       <label htmlFor="service_type_id" className="block text-sm font-medium text-orbitly-dark-sage">Service</label>
-                      <select id="service_type_id" name="service_type_id" value={newAppointment.service_type_id || ''} onChange={handleNewAppointmentChange} required
+                      <select id="service_type_id" name="service_type_id" value={currentAppointmentForModal.service_type_id || ''} onChange={handleModalInputChange} required
                         className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
                         <option value="" disabled>Select a service</option>
                         {availableServices.map(service => <option key={service.id} value={service.id}>{service.name}</option>)}
@@ -456,7 +455,7 @@ export default function AppointmentsPage() {
                     {/* Healer Selector (Optional) */}
                     <div>
                       <label htmlFor="healer_id" className="block text-sm font-medium text-orbitly-dark-sage">Healer (Optional)</label>
-                      <select id="healer_id" name="healer_id" value={newAppointment.healer_id || ''} onChange={handleNewAppointmentChange}
+                      <select id="healer_id" name="healer_id" value={currentAppointmentForModal.healer_id || ''} onChange={handleModalInputChange}
                         className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 pl-3 pr-10 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
                         <option value="">Assign later or no specific healer</option>
                         {availableHealers.map(healer => <option key={healer.id} value={healer.id}>{healer.full_name}</option>)}
@@ -466,12 +465,12 @@ export default function AppointmentsPage() {
                     <div className="grid grid-cols-2 gap-4">
                        <div>
                            <label htmlFor="date" className="block text-sm font-medium text-orbitly-dark-sage">Date</label>
-                           <input type="date" id="date" name="date" value={newAppointment.date || ''} onChange={handleNewAppointmentChange} required
+                           <input type="date" id="date" name="date" value={currentAppointmentForModal.date || ''} onChange={handleModalInputChange} required
                                className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                        </div>
                        <div>
                            <label htmlFor="time" className="block text-sm font-medium text-orbitly-dark-sage">Time</label>
-                           <input type="time" id="time" name="time" value={newAppointment.time || ''} onChange={handleNewAppointmentChange} required
+                           <input type="time" id="time" name="time" value={currentAppointmentForModal.time || ''} onChange={handleModalInputChange} required
                                className="mt-1 block w-full rounded-lg border-orbitly-soft-gray py-2 px-3 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
                        </div>
                     </div>
@@ -479,20 +478,20 @@ export default function AppointmentsPage() {
                      {/* Notes */}
                     <div>
                        <label htmlFor="notes" className="block text-sm font-medium text-orbitly-dark-sage">Notes (Optional)</label>
-                       <textarea id="notes" name="notes" value={newAppointment.notes || ''} onChange={handleNewAppointmentChange} rows={3}
+                       <textarea id="notes" name="notes" value={currentAppointmentForModal.notes || ''} onChange={handleModalInputChange} rows={3}
                            className="mt-1 block w-full rounded-lg border-orbitly-soft-gray p-2.5 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" 
                            placeholder="Any specific details for the appointment..."></textarea>
                     </div>
 
                     <div className="mt-6 flex justify-end space-x-3">
-                      <button type="button" onClick={() => setIsAppointmentModalOpen(false)} disabled={isUpdating}
+                      <button type="button" onClick={handleCloseAppointmentModal} disabled={isUpdating}
                         className="rounded-lg border border-orbitly-soft-gray px-4 py-2 text-sm font-medium text-orbitly-dark-sage hover:bg-orbitly-light-green focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors">
                         Cancel
                       </button>
                       <button type="submit" disabled={isUpdating}
                         className="flex items-center justify-center rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors disabled:opacity-70">
                         {isUpdating && <FiLoader className="animate-spin mr-2" />} 
-                        Schedule Appointment
+                        {isEditMode ? 'Save Changes' : 'Schedule Appointment'}
                       </button>
                     </div>
                   </form>

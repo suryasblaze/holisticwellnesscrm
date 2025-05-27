@@ -162,8 +162,8 @@ export default function AppointmentsPage() {
         source: app.booking_source, // Map booking_source from DB to source for frontend
         lead_name: app.leads?.[0]?.name,
         lead_phone: app.leads?.[0]?.phone,
-        service_name: app.service_types?.name,
-        healer_name: app.users?.full_name, 
+        service_name: app.service_types?.[0]?.name,
+        healer_name: app.users?.[0]?.full_name, 
         scheduled_for: `${app.date}T${app.time}`
       })) || [];
       

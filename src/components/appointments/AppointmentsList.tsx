@@ -1,20 +1,6 @@
 import { useState } from 'react';
 import { FunnelIcon, PlusIcon, ChatBubbleLeftIcon, GlobeAltIcon, BriefcaseIcon } from '@heroicons/react/24/outline';
-
-interface Appointment {
-  id: string;
-  lead_name?: string;
-  date: string;
-  time: string;
-  service_name?: string;
-  status: 'scheduled' | 'completed' | 'cancelled' | 'no_show';
-  source: 'whatsapp' | 'website' | 'crm';
-  healer_name?: string;
-  payment_status: 'pending' | 'partial' | 'completed';
-  notes?: string;
-  lead_phone?: string;
-  scheduled_for?: string;
-}
+import { Appointment } from '@/types/Appointment';
 
 interface AppointmentsListProps {
   appointments: Appointment[];

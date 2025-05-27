@@ -11,27 +11,7 @@ import {
 } from 'react-icons/fi';
 import { Dialog, Transition } from '@headlessui/react';
 import AppointmentsList from '@/components/appointments/AppointmentsList';
-
-// Assuming a similar structure to Leads, but with Appointment specific fields
-interface Appointment {
-  id: string;
-  created_at: string;
-  lead_id: string; // Link to Lead
-  lead_name?: string; // Denormalized for display
-  lead_phone?: string; // Denormalized for display
-  service_type_id: string; // Link to ServiceType
-  service_name?: string; // Denormalized for display
-  healer_id?: string; // Link to User (healer)
-  healer_name?: string; // Denormalized for display
-  date: string; // Date of appointment
-  time: string; // Time of appointment
-  scheduled_for?: string; // Combined datetime for sorting/filtering
-  status: 'scheduled' | 'completed' | 'cancelled' | 'no_show';
-  payment_status: 'pending' | 'partial' | 'completed';
-  amount_paid?: number;
-  notes?: string;
-  source: 'whatsapp' | 'website' | 'crm'; // Made required to match AppointmentsList
-}
+import { Appointment } from '@/types/Appointment';
 
 const appointmentStatusOptions = [
   { value: 'scheduled', label: 'Scheduled', color: 'bg-blue-100 text-blue-700' },

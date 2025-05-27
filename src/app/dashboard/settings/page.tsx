@@ -14,7 +14,7 @@ export default function SettingsPage() {
         </div>
         <h2 className="text-4xl font-extrabold text-indigo-700 mb-4 drop-shadow-lg">Settings Coming Soon!</h2>
         <p className="text-lg text-indigo-500 text-center max-w-xl mb-8">
-          We're crafting a powerful and delightful settings experience for you.<br />
+          We&apos;re crafting a powerful and delightful settings experience for you.<br />
           Personalize your wellness journey soon!
         </p>
         <div className="w-full max-w-xs bg-gradient-to-r from-indigo-400 to-purple-400 rounded-full h-3 shadow-inner">

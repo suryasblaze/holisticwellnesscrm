@@ -349,7 +349,7 @@ export default function AdminDashboard() {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
-              <p className="text-sm text-gray-500">Welcome back! Here's what's happening with your leads today.</p>
+              <p className="text-sm text-gray-500">Welcome back! Here&apos;s what&apos;s happening with your leads today.</p>
             </div>
             <div className="flex space-x-4">
               <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">

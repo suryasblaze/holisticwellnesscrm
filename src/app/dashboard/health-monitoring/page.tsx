@@ -10,7 +10,7 @@ export default function HealthMonitoringPage() {
           Health Monitoring Section - Under Construction
         </h2>
         <p className="text-gray-500 text-lg text-center max-w-md mb-8">
-          We're working on a modern health monitoring dashboard for you.<br />Please check back soon!
+          We&apos;re working on a modern health monitoring dashboard for you.<br />Please check back soon!
         </p>
         <div className="w-full max-w-sm bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
           <div 

@@ -2,12 +2,18 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  output: "export",
   images: {
+    domains: [
+      'localhost',
+      'dhruvaholisticwellness.com',
+      'i.postimg.cc',
+      'zbkthjllnxxbfizrheau.supabase.co',
     domains: ['localhost', 'dhruvaholisticwellness.com', 'i.postimg.cc', 'zbkthjllnxxbfizrheau.supabase.co'],
   },
-  typescript: {
-    ignoreBuildErrors: true,
+  experimental: {
+    serverActions: {
+      allowedOrigins: ['localhost:3000', 'dhruvaholisticwellness.com'],
+    },
   },
 };
 

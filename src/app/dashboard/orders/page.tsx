@@ -269,15 +269,15 @@ export default function OrdersPage() {
       const { order_items, total_amount, lead_id, customer_name, customer_phone, customer_email, status, payment_status, notes } = newOrderData;
       
       const orderPayload: Omit<Order, 'id' | 'created_at' | 'order_items' | 'source'> & { order_items?: Omit<OrderItem, 'id' | 'order_id'>[] } = {
-        lead_id: lead_id || null,
-        customer_name: customer_name || null,
-        customer_phone: customer_phone || null,
-        customer_email: customer_email || null,
+        lead_id: lead_id || undefined,
+        customer_name: customer_name || undefined,
+        customer_phone: customer_phone || undefined,
+        customer_email: customer_email || undefined,
         status: status || 'pending',
         payment_status: payment_status || 'pending',
         total_amount: total_amount || 0,
         source_platform: 'CRM_Manual', // Hardcoded for CRM orders
-        notes: notes || null,
+        notes: notes || undefined,
         // user_id: could be current logged in user if needed
       };
 

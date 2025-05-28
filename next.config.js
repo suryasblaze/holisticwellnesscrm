@@ -8,7 +8,8 @@ const nextConfig = {
       'dhruvaholisticwellness.com',
       'i.postimg.cc',
       'zbkthjllnxxbfizrheau.supabase.co',
-    domains: ['localhost', 'dhruvaholisticwellness.com', 'i.postimg.cc', 'zbkthjllnxxbfizrheau.supabase.co'],
+      'holisticwellnesscrm-rkg67flkp-suryasblazes-projects.vercel.app'
+    ],
   },
   experimental: {
     serverActions: {

@@ -435,18 +435,24 @@ export default function OrdersPage() {
                     <div className="border-t pt-4">
                         <h4 className="text-md font-semibold text-orbitly-charcoal mb-2">Order Items</h4>
                         <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
-                            {newOrderData.order_items?.map((item, index) => (
-                                <div key={index} className="flex items-center justify-between p-2 bg-orbitly-light-green/30 rounded-md">
-                                    <div>
-                                        <p className="font-medium">{item.product_name || 'Product Name'}</p>
-                                        <p className="text-xs text-orbitly-dark-sage">Qty: {item.quantity} @ ₹{(item.price ?? item.price_per_unit_at_time_of_order ?? 0).toFixed(2)}</p>
+                            {newOrderData.order_items?.map((item, index) => {
+                                // Type guard for NewOrderItem
+                                const isNewOrderItem = 'product_name' in item;
+                                const displayName = isNewOrderItem ? item.product_name : item.products?.name;
+                                const price = isNewOrderItem ? item.price : item.price ?? 0;
+                                return (
+                                    <div key={index} className="flex items-center justify-between p-2 bg-orbitly-light-green/30 rounded-md">
+                                        <div>
+                                            <p className="font-medium">{displayName || 'Product Name'}</p>
+                                            <p className="text-xs text-orbitly-dark-sage">Qty: {item.quantity} @ ₹{price.toFixed(2)}</p>
+                                        </div>
+                                        <div className="flex items-center">
+                                            <p className="font-semibold mr-3">₹{(item.quantity * price).toFixed(2)}</p>
+                                            <button type="button" onClick={() => handleRemoveItemFromOrder(index)} className="text-red-500 hover:text-red-700"><FiTrash2 /></button>
+                                        </div>
                                     </div>
-                                    <div className="flex items-center">
-                                        <p className="font-semibold mr-3">₹{(item.quantity * (item.price ?? item.price_per_unit_at_time_of_order ?? 0)).toFixed(2)}</p>
-                                        <button type="button" onClick={() => handleRemoveItemFromOrder(index)} className="text-red-500 hover:text-red-700"><FiTrash2 /></button>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                             {newOrderData.order_items?.length === 0 && <p className="text-sm text-center text-orbitly-dark-sage py-3">No items added yet.</p>}
                         </div>
                         <div className="flex items-end gap-3 border-t pt-3">
@@ -507,16 +513,21 @@ export default function OrdersPage() {
                             <h4 className="text-md font-semibold text-orbitly-charcoal border-b pb-2">Items Ordered ({selectedOrder.order_items?.length || 0})</h4>
                             {selectedOrder.order_items && selectedOrder.order_items.length > 0 ? (
                                 <ul className="divide-y divide-orbitly-light-green max-h-60 overflow-y-auto">
-                                    {selectedOrder.order_items.map(item => (
-                                        <li key={item.id} className="flex items-center py-3">
-                                            <img src={item.products?.image_url || 'https://via.placeholder.com/100'} alt={item.products?.name} className="h-16 w-16 rounded-md object-cover mr-4"/>
-                                            <div className="flex-grow">
-                                                <p className="font-medium text-orbitly-charcoal">{item.products?.name || 'Product name missing'}</p>
-                                                <p className="text-sm text-orbitly-dark-sage">Qty: {item.quantity} @ ₹{(item.price ?? item.price_per_unit_at_time_of_order ?? 0).toFixed(2)}</p>
-                                            </div>
-                                            <p className="text-sm font-medium text-orbitly-charcoal">₹{(item.quantity * (item.price ?? item.price_per_unit_at_time_of_order ?? 0)).toFixed(2)}</p>
-                                        </li>
-                                    ))}
+                                    {selectedOrder.order_items.map((item, index) => {
+                                        const isNewOrderItem = 'product_name' in item;
+                                        const displayName = isNewOrderItem ? item.product_name : item.products?.name;
+                                        const price = isNewOrderItem ? item.price : item.price ?? 0;
+                                        return (
+                                            <li key={item.id || index} className="flex items-center py-3">
+                                                <img src={item.products?.image_url || 'https://via.placeholder.com/100'} alt={displayName} className="h-16 w-16 rounded-md object-cover mr-4"/>
+                                                <div className="flex-grow">
+                                                    <p className="font-medium text-orbitly-charcoal">{displayName || 'Product name missing'}</p>
+                                                    <p className="text-sm text-orbitly-dark-sage">Qty: {item.quantity} @ ₹{price.toFixed(2)}</p>
+                                                </div>
+                                                <p className="text-sm font-medium text-orbitly-charcoal">₹{(item.quantity * price).toFixed(2)}</p>
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             ) : <p className="text-sm text-orbitly-dark-sage">No items found for this order.</p>}
                             
